@@ -98,6 +98,9 @@ static struct disp_led dis2[] = {
 };
 static const int dis2_size = ARRAY_SIZE(dis2);
 
+int count;
+bt_addr_le_t addr_list[25];
+
 static void disp_animate(int32_t duration, const struct mb_image *img, uint8_t img_count, uint8_t loop)
 {
     struct mb_display *disp = mb_display_get();
@@ -175,7 +178,27 @@ static bool adv_data_found(struct bt_data *data, void *user_data)
     return true;
 }
 
-int count;
+static void reset_addr_list()
+{
+    count = 0;
+}
+
+static int add_device_ifnotexists(const bt_addr_le_t *addr)
+{
+    for(int i=0;i<count;i++) {
+        if (bt_addr_le_cmp(&addr_list[i], addr)==0){
+            // exists
+            printk("Already exists.\n");
+            return 0;
+        }
+    }
+    if (count<ARRAY_SIZE(addr_list)) {
+        bt_addr_le_copy(&addr_list[count++], addr);
+        return 1;
+    }
+    printk("Device over.\n");
+    return -1;
+}
 
 static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
              struct net_buf_simple *ad)
@@ -185,10 +208,11 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
     hit=0;
     bt_data_parse(ad, adv_data_found, &hit);
     if (hit) {
-        count++;
-        bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
-        printk("[%d] COCOA found: %s (RSSI %d)\n", count, addr_str, rssi);
-        set_dis(addr, rssi);
+        if (add_device_ifnotexists(addr)==1) {
+            bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
+            printk("[%d] COCOA found: %s (RSSI %d)\n", count, addr_str, rssi);
+            set_dis(addr, rssi);
+        }
     }
 }
 
@@ -204,8 +228,8 @@ void main(void)
     printk("Bluetooth initialized\n");
 
     clear_dis();
+    reset_addr_list();
 
-    count = 0;
     err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, device_found);
     if (err) {
         printk("Scanning failed to start (err %d)\n", err);
